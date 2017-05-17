@@ -55,6 +55,12 @@ dependencies {
 	compile('org.springframework.boot:spring-boot-starter-social-facebook')
 	compile('org.springframework.boot:spring-boot-starter-web')
 	compile('com.google.guava:guava:21.0')
+	compile("com.fasterxml.jackson.datatype:jackson-datatype-guava:2.1.1")
+	compile("com.fasterxml.jackson.datatype:jackson-datatype-joda:2.1.1")
+	compile("com.fasterxml.jackson.core:jackson-annotations:2.1.1")
+	compile("com.fasterxml.jackson.core:jackson-databind:2.1.1")
+	compile("joda-time:joda-time:2.1")
+	compile("io.netty:netty-all:4.1.11.Final")
 
 	runtime('com.h2database:h2')
 	runtime('mysql:mysql-connector-java')
