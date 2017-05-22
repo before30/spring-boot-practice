@@ -2,20 +2,15 @@ package cc.before30.webapp.services.lease;
 
 import cc.before30.webapp.services.lease.domain.Lease;
 import cc.before30.webapp.services.lease.domain.RequestedSomething;
+import cc.before30.webapp.services.lease.support.SomethingResponseSupport;
 import lombok.extern.apachecommons.CommonsLog;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
 import org.springframework.scheduling.TriggerContext;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestOperations;
 
 import java.util.*;
 import java.util.Map.Entry;
@@ -44,7 +39,6 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 
 	private final Map<RequestedSomething, LeaseRenewalScheduler> renewals = new ConcurrentHashMap<RequestedSomething, LeaseRenewalScheduler>();
 
-	private final VaultOperations operations;
 
 	private int minRenewalSeconds = 10;
 
@@ -58,19 +52,13 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 
 	private volatile int status = STATUS_INITIAL;
 
-	public SomethingLeaseContainer(VaultOperations operations) {
+	public SomethingLeaseContainer() {
 
-		Assert.notNull(operations, "VaultOperations must not be null");
-
-		this.operations = operations;
 	}
 
-	public SomethingLeaseContainer(VaultOperations operations, TaskScheduler taskScheduler) {
-
-		Assert.notNull(operations, "VaultOperations must not be null");
+	public SomethingLeaseContainer(TaskScheduler taskScheduler) {
 		Assert.notNull(taskScheduler, "TaskScheduler must not be null");
 
-		this.operations = operations;
 		setTaskScheduler(taskScheduler);
 	}
 
@@ -144,18 +132,15 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 
 	private void start(RequestedSomething requestedSomething,
                        LeaseRenewalScheduler renewalScheduler) {
+	    // doGetSecrets를 호출한다
 
-		VaultResponseSupport<Map<String, Object>> secrets = doGetSecrets(requestedSomething);
+		SomethingResponseSupport<Map<String, Object>> something = doGetSomething(requestedSomething);
 
-		if (secrets != null) {
-
-			Lease lease = !StringUtils.hasText(secrets.getLeaseId()) ? Lease.none()
-					: Lease.of(secrets.getLeaseId(), secrets.getLeaseDuration(),
-							secrets.isRenewable());
-
-			potentiallyScheduleLeaseRenewal(requestedSomething, lease, renewalScheduler);
-			onSecretsObtained(requestedSomething, lease, secrets.getData());
-		}
+		if (something != null) {
+		    // get lease data form response of something
+            potentiallyScheduleLeaseRenewal(requestedSomething, null, renewalScheduler);
+            onSecretsObtained(requestedSomething, null, null);
+        }
 	}
 
 	public void stop() {
@@ -211,9 +196,9 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 					Lease lease = entry.getValue().getLease();
 					entry.getValue().disableScheduleRenewal();
 
-					if (lease != null) {
-						doRevokeLease(entry.getKey(), lease);
-					}
+//					if (lease != null) {
+//						doRevokeLease(entry.getKey(), lease);
+//					}
 				}
 
 				if (manageTaskScheduler) {
@@ -231,12 +216,6 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 			final Lease lease, final LeaseRenewalScheduler leaseRenewal) {
 
 		if (leaseRenewal.isLeaseRenewable(lease)) {
-
-			if (log.isDebugEnabled()) {
-				log.debug(String.format("Lease %s qualified for renewal",
-						lease.getLeaseId()));
-			}
-
 			leaseRenewal.scheduleRenewal(new RenewLease() {
 
 				@Override
@@ -259,70 +238,63 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 		}
 	}
 
-	protected VaultResponseSupport<Map<String, Object>> doGetSecrets(
-			org.springframework.vault.core.lease.domain.RequestedSomething requestedSomething) {
-
-		try {
-			return this.operations.read(requestedSomething.getPath());
-		}
-		catch (RuntimeException e) {
-
-			onError(requestedSomething, Lease.none(), e);
-			return null;
-		}
+	protected SomethingResponseSupport<Map<String, Object>> doGetSomething(
+			RequestedSomething requestedSomething) {
+        // Rest Template를 사용해서 무언가를 받아온다
+		return null;
 	}
 
-	protected Lease doRenewLease(org.springframework.vault.core.lease.domain.RequestedSomething requestedSomething, final Lease lease) {
+	protected Lease doRenewLease(RequestedSomething requestedSomething, final Lease lease) {
 
-		try {
-			ResponseEntity<Map<String, Object>> entity = operations
-					.doWithSession(new RestOperationsCallback<ResponseEntity<Map<String, Object>>>() {
+//		try {
+//			ResponseEntity<Map<String, Object>> entity = operations
+//					.doWithSession(new RestOperationsCallback<ResponseEntity<Map<String, Object>>>() {
+//
+//						@Override
+//						@SuppressWarnings("unchecked")
+//						public ResponseEntity<Map<String, Object>> doWithRestOperations(
+//								RestOperations restOperations) {
+//							return (ResponseEntity) restOperations.exchange(
+//									"/sys/renew/{leaseId}", HttpMethod.PUT, null,
+//									Map.class, lease.getLeaseId());
+//						}
+//					});
 
-						@Override
-						@SuppressWarnings("unchecked")
-						public ResponseEntity<Map<String, Object>> doWithRestOperations(
-								RestOperations restOperations) {
-							return (ResponseEntity) restOperations.exchange(
-									"/sys/renew/{leaseId}", HttpMethod.PUT, null,
-									Map.class, lease.getLeaseId());
-						}
-					});
+//			Map<String, Object> body = entity.getBody();
+//			String leaseId = (String) body.get("lease_id");
+//			Number leaseDuration = (Number) body.get("lease_duration");
+//			boolean renewable = (Boolean) body.get("renewable");
+//
+//			if (leaseDuration == null || leaseDuration.intValue() < minRenewalSeconds) {
+//				onLeaseExpired(requestedSomething, lease);
+//				return null;
+//			}
 
-			Map<String, Object> body = entity.getBody();
-			String leaseId = (String) body.get("lease_id");
-			Number leaseDuration = (Number) body.get("lease_duration");
-			boolean renewable = (Boolean) body.get("renewable");
-
-			if (leaseDuration == null || leaseDuration.intValue() < minRenewalSeconds) {
-				onLeaseExpired(requestedSomething, lease);
-				return null;
-			}
-
-			return Lease.of(leaseId, leaseDuration.longValue(), renewable);
-		}
-		catch (HttpStatusCodeException e) {
-
-			if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
-				onLeaseExpired(requestedSomething, lease);
-			}
-
-			onError(requestedSomething,
-					lease,
-					new VaultException(String.format("Cannot renew lease: %s",
-							VaultResponses.getError(e.getResponseBodyAsString()))));
-		}
-		catch (RuntimeException e) {
-			onError(requestedSomething, lease, e);
-		}
+////			return Lease.of(leaseId, leaseDuration.longValue(), renewable);
+//		}
+//		catch (HttpStatusCodeException e) {
+//
+//			if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
+//				onLeaseExpired(requestedSomething, lease);
+//			}
+//
+//			onError(requestedSomething,
+//					lease,
+//					new VaultException(String.format("Cannot renew lease: %s",
+//							VaultResponses.getError(e.getResponseBodyAsString()))));
+//		}
+//		catch (RuntimeException e) {
+//			onError(requestedSomething, lease, e);
+//		}
 
 		return null;
 	}
 
-	protected void onLeaseExpired(org.springframework.vault.core.lease.domain.RequestedSomething requestedSomething, Lease lease) {
+	protected void onLeaseExpired(RequestedSomething requestedSomething, Lease lease) {
 
 		super.onLeaseExpired(requestedSomething, lease);
 
-		if (requestedSomething.getMode() == Mode.ROTATE) {
+		if (requestedSomething.getMode() == RequestedSomething.Mode.ROTATE) {
 			start(requestedSomething, renewals.get(requestedSomething));
 		}
 	}
@@ -333,36 +305,36 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 	 * @param requestedSomething must not be {@literal null}.
 	 * @param lease must not be {@literal null}.
 	 */
-	protected void doRevokeLease(org.springframework.vault.core.lease.domain.RequestedSomething requestedSomething, final Lease lease) {
+	protected void doRevokeLease(RequestedSomething requestedSomething, final Lease lease) {
 
-		try {
-
-			onBeforeLeaseRevocation(requestedSomething, lease);
-
-			operations
-					.doWithSession(new RestOperationsCallback<ResponseEntity<Map<String, Object>>>() {
-
-						@Override
-						@SuppressWarnings("unchecked")
-						public ResponseEntity<Map<String, Object>> doWithRestOperations(
-								RestOperations restOperations) {
-							return (ResponseEntity) restOperations.exchange(
-									"/sys/revoke/{leaseId}", HttpMethod.PUT, null,
-									Map.class, lease.getLeaseId());
-						}
-					});
-
-			onAfterLeaseRevocation(requestedSomething, lease);
-		}
-		catch (HttpStatusCodeException e) {
-			onError(requestedSomething,
-					lease,
-					new VaultException(String.format("Cannot revoke lease: %s",
-							VaultResponses.getError(e.getResponseBodyAsString()))));
-		}
-		catch (RuntimeException e) {
-			onError(requestedSomething, lease, e);
-		}
+//		try {
+//
+//			onBeforeLeaseRevocation(requestedSomething, lease);
+//
+//			operations
+//					.doWithSession(new RestOperationsCallback<ResponseEntity<Map<String, Object>>>() {
+//
+//						@Override
+//						@SuppressWarnings("unchecked")
+//						public ResponseEntity<Map<String, Object>> doWithRestOperations(
+//								RestOperations restOperations) {
+//							return (ResponseEntity) restOperations.exchange(
+//									"/sys/revoke/{leaseId}", HttpMethod.PUT, null,
+//									Map.class, lease.getLeaseId());
+//						}
+//					});
+//
+//			onAfterLeaseRevocation(requestedSomething, lease);
+//		}
+//		catch (HttpStatusCodeException e) {
+//			onError(requestedSomething,
+//					lease,
+//					new VaultException(String.format("Cannot revoke lease: %s",
+//							VaultResponses.getError(e.getResponseBodyAsString()))));
+//		}
+//		catch (RuntimeException e) {
+//			onError(requestedSomething, lease, e);
+//		}
 	}
 
 
@@ -489,38 +461,31 @@ public class SomethingLeaseContainer extends SomethingLeaseEventPublisher implem
 		}
 	}
 
-	/**
-	 * This one-shot trigger creates only one execution time to trigger an execution only
-	 * once.
-	 */
+
 	static class OneShotTrigger implements Trigger {
 
-		private static final AtomicIntegerFieldUpdater<OneShotTrigger> UPDATER = AtomicIntegerFieldUpdater
-				.newUpdater(OneShotTrigger.class, "status");
+	    private static final AtomicIntegerFieldUpdater<OneShotTrigger> UPDATER = AtomicIntegerFieldUpdater.newUpdater(OneShotTrigger.class, "status");
 
-		private static final int STATUS_ARMED = 0;
-		private static final int STATUS_FIRED = 1;
+	    private static final int STATUS_ARMED = 0;
+	    private static final int STATUS_FIRED = 1;
 
-		// see AtomicIntegerFieldUpdater UPDATER
-		private volatile int status = 0;
+	    private volatile int status = 0;
 
-		private final long seconds;
+	    private final long seconds;
 
-		OneShotTrigger(long seconds) {
-			this.seconds = seconds;
-		}
+	    OneShotTrigger(long seconds) {
+	        this.seconds = seconds;
+        }
 
-		@Override
-		public Date nextExecutionTime(TriggerContext triggerContext) {
+        @Override
+        public Date nextExecutionTime(TriggerContext triggerContext) {
+	        if (UPDATER.compareAndSet(this, STATUS_ARMED, STATUS_FIRED)) {
+	            return new Date(System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(seconds));
+            }
 
-			if (UPDATER.compareAndSet(this, STATUS_ARMED, STATUS_FIRED)) {
-				return new Date(System.currentTimeMillis()
-						+ TimeUnit.SECONDS.toMillis(seconds));
-			}
-
-			return null;
-		}
-	}
+            return null;
+        }
+    }
 
 	interface RenewLease {
 		Lease renewLease(Lease lease) throws RuntimeException;
